@@ -1,0 +1,95 @@
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: coldchain-mysql
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-time-zone=+00:00
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpass
+      MYSQL_DATABASE: coldchain
+      MYSQL_USER: coldchain
+      MYSQL_PASSWORD: coldchainpass
+      TZ: UTC
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./deploy/mysql/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-ucoldchain", "-pcoldchainpass"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - coldchain-net
+
+  redis:
+    image: redis:7-alpine
+    container_name: coldchain-redis
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks:
+      - coldchain-net
+
+  backend:
+    build:
+      context: ./backend
+    container_name: coldchain-backend
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/coldchain?useUnicode=true&characterEncoding=utf8mb4&serverTimezone=UTC&useSSL=false&allowPublicKeyRetrieval=true
+      SPRING_DATASOURCE_USERNAME: coldchain
+      SPRING_DATASOURCE_PASSWORD: coldchainpass
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: "6379"
+      COLDCHAIN_EVIDENCE_DIR: /app/data/evidence
+      COLDCHAIN_SEED_ON_START: "true"
+      TZ: UTC
+    ports:
+      - "8080:8080"
+    volumes:
+      - evidence-data:/app/data/evidence
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/actuator/health | grep -q UP || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 40s
+    networks:
+      - coldchain-net
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: coldchain-frontend
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "8088:80"
+    networks:
+      - coldchain-net
+
+volumes:
+  mysql-data:
+  redis-data:
+  evidence-data:
+
+networks:
+  coldchain-net:
+    driver: bridge

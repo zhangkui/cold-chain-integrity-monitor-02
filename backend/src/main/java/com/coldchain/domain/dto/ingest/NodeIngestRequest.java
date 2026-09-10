@@ -1,0 +1,14 @@
+package com.coldchain.domain.dto.ingest;
+
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotEmpty;
+import lombok.Data;
+
+import java.util.List;
+
+@Data
+public class NodeIngestRequest {
+    @NotEmpty(message = "nodes 不能为空")
+    @Valid
+    private List<NodeItem> nodes;
+}

@@ -1,0 +1,59 @@
+server:
+  port: 8080
+  servlet:
+    context-path: /
+
+spring:
+  application:
+    name: coldchain-integrity
+  datasource:
+    url: jdbc:mysql://localhost:3306/coldchain?useUnicode=true&characterEncoding=utf8mb4&serverTimezone=UTC&useSSL=false&allowPublicKeyRetrieval=true
+    username: coldchain
+    password: coldchainpass
+    hikari:
+      maximum-pool-size: 10
+      connection-timeout: 10000
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      timeout: 3000
+  servlet:
+    multipart:
+      max-file-size: 20MB
+      max-request-size: 25MB
+  jackson:
+    time-zone: UTC
+    date-format: yyyy-MM-dd'T'HH:mm:ss.SSS'Z'
+    serialization:
+      write-dates-as-timestamps: false
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+  global-config:
+    banner: false
+    db-config:
+      id-type: auto
+  mapper-locations: classpath*:/mapper/**/*.xml
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+coldchain:
+  evidence:
+    dir: ${COLDCHAIN_EVIDENCE_DIR:./data/evidence}
+  seed:
+    # 首次启动（无数据时）写入演示数据
+    on-start: ${COLDCHAIN_SEED_ON_START:true}
+
+logging:
+  level:
+    com.coldchain: INFO
