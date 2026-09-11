@@ -18,11 +18,17 @@ public class GlobalExceptionHandler {
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
     @ExceptionHandler(BusinessException.class)
-    public ResponseEntity<ApiResponse<Void>> handleBusiness(BusinessException ex, HttpServletRequest req) {
-        log.warn("business error on {}: {}", req.getRequestURI(), ex.getMessage());
-        HttpStatus status = ex.getCode() == 404 ? HttpStatus.NOT_FOUND
-                : ex.getCode() == 409 ? HttpStatus.CONFLICT : HttpStatus.BAD_REQUEST;
-        return ResponseEntity.status(status).body(ApiResponse.fail(ex.getCode(), ex.getMessage()));
+    public ResponseEntity<ApiResponse<?>> handleBusiness(BusinessException ex, HttpServletRequest req) {
+        log.warn("business error on {}: {} [{}]", req.getRequestURI(), ex.getMessage(), ex.getErrorCode());
+        HttpStatus status = switch (ex.getCode()) {
+            case 404 -> HttpStatus.NOT_FOUND;
+            case 409 -> HttpStatus.CONFLICT;
+            case 422 -> HttpStatus.UNPROCESSABLE_ENTITY;
+            case 500 -> HttpStatus.INTERNAL_SERVER_ERROR;
+            default -> HttpStatus.BAD_REQUEST;
+        };
+        return ResponseEntity.status(status)
+                .body(ApiResponse.fail(ex.getCode(), ex.getErrorCode(), ex.getMessage(), ex.getData()));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
@@ -30,18 +36,18 @@ public class GlobalExceptionHandler {
         String msg = ex.getBindingResult().getFieldErrors().stream()
                 .map(FieldError::getDefaultMessage)
                 .collect(Collectors.joining("; "));
-        return ApiResponse.fail(400, msg);
+        return ApiResponse.fail(400, "VALIDATION_FAILED", msg);
     }
 
     @ExceptionHandler(MaxUploadSizeExceededException.class)
     public ApiResponse<Void> handleUploadSize(MaxUploadSizeExceededException ex) {
-        return ApiResponse.fail(413, "上传文件超过大小限制（20MB）");
+        return ApiResponse.fail(413, "PAYLOAD_TOO_LARGE", "上传文件超过大小限制（20MB）");
     }
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponse<Void>> handleOther(Exception ex, HttpServletRequest req) {
         log.error("unexpected error on {}", req.getRequestURI(), ex);
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(ApiResponse.fail(500, "服务器内部错误: " + ex.getMessage()));
+                .body(ApiResponse.fail(500, "INTERNAL_ERROR", "服务器内部错误: " + ex.getMessage()));
     }
 }

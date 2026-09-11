@@ -2,8 +2,6 @@ package com.coldchain.service;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.coldchain.common.BusinessException;
-import com.coldchain.common.HashUtils;
-import com.coldchain.common.TimeUtils;
 import com.coldchain.domain.entity.Anomaly;
 import com.coldchain.domain.entity.ColdBox;
 import com.coldchain.domain.entity.Device;
@@ -14,15 +12,14 @@ import com.coldchain.mapper.AnomalyMapper;
 import com.coldchain.mapper.ColdBoxMapper;
 import com.coldchain.mapper.DeviceMapper;
 import com.coldchain.mapper.TemperatureSampleMapper;
+import com.coldchain.service.assessment.ChainVerifier;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.Duration;
-import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -236,33 +233,9 @@ public class DetectionService {
         if (samples.isEmpty()) {
             throw new BusinessException(404, "设备暂无采样数据: " + deviceId);
         }
-        List<ChainBreak> breaks = new ArrayList<>();
-        String prevChain = HashUtils.GENESIS;
-        Long lastSeq = null;
-
-        for (TemperatureSample s : samples) {
-            Instant instant = s.getSampleTimeUtc().toInstant(ZoneOffset.UTC);
-            String canonicalTemp = s.getTemperatureC().setScale(2, RoundingMode.HALF_UP).toPlainString();
-            String expectedContent = HashUtils.contentHash(s.getDeviceId(), s.getSeq(),
-                    TimeUtils.hashFormat(instant), canonicalTemp);
-            String expectedChain = HashUtils.chainHash(prevChain, expectedContent);
-
-            if (lastSeq != null && s.getSeq() <= lastSeq) {
-                breaks.add(new ChainBreak(s.getSeq(), expectedChain, s.getChainHash(), "序号非递增"));
-            }
-            if (!expectedContent.equals(s.getContentHash())) {
-                breaks.add(new ChainBreak(s.getSeq(), expectedContent, s.getContentHash(),
-                        "contentHash 不一致：采样时间或温度被篡改"));
-            }
-            if (!prevChain.equals(s.getPrevHash())) {
-                breaks.add(new ChainBreak(s.getSeq(), prevChain, s.getPrevHash(), "prevHash 断链"));
-            }
-            if (!expectedChain.equals(s.getChainHash())) {
-                breaks.add(new ChainBreak(s.getSeq(), expectedChain, s.getChainHash(), "chainHash 不一致"));
-            }
-            prevChain = s.getChainHash();
-            lastSeq = s.getSeq();
-        }
+        List<ChainBreak> breaks = new ArrayList<>(ChainVerifier.verify(samples).stream()
+                .map(b -> new ChainBreak(b.seq(), b.expected(), b.actual(), b.reason()))
+                .toList());
 
         // 仅记录第一个失配点为 HASH_BROKEN 异常（避免告警风暴），幂等
         if (!breaks.isEmpty()) {

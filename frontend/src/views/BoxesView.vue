@@ -88,6 +88,20 @@
             </el-badge>
           </template>
         </el-table-column>
+        <el-table-column label="综合评估" width="210">
+          <template #default="{ row }">
+            <div v-if="row.latestAssessment" class="assess-cell" @click="openAssessment(row)">
+              <el-tag :type="assessmentTagType(row.latestAssessment.conclusion)" size="small" effect="dark">
+                {{ row.latestAssessment.conclusionLabel }}
+              </el-tag>
+              <span class="sub-text">v{{ row.latestAssessment.version }} · {{ fmtUtc(row.latestAssessment.generatedAt) }}</span>
+              <div class="assess-risk" :title="row.latestAssessment.summary">
+                {{ row.latestAssessment.topRisk?.message || row.latestAssessment.summary }}
+              </div>
+            </div>
+            <el-button v-else link type="primary" size="small" @click="openAssessment(row)">生成评估</el-button>
+          </template>
+        </el-table-column>
         <el-table-column label="状态" width="100">
           <template #default="{ row }">
             <el-tag :type="boxStatusType(row.status)" size="small">{{ boxStatusLabel(row.status) }}</el-tag>
@@ -106,6 +120,18 @@
     <el-drawer v-model="drawerVisible" :size="drawerSize" :title="drawerTitle" destroy-on-close>
       <el-tabs v-model="activeTab">
         <el-tab-pane label="温度曲线" name="chart">
+          <div v-if="currentBox?.latestAssessment" class="assess-strip" @click="activeTab = 'assessment'">
+            <el-tag :type="assessmentTagType(currentBox.latestAssessment.conclusion)" size="small" effect="dark">
+              {{ currentBox.latestAssessment.conclusionLabel }}
+            </el-tag>
+            <span class="sub-text">最近评估 v{{ currentBox.latestAssessment.version }} · {{ fmtUtc(currentBox.latestAssessment.generatedAt) }} UTC</span>
+            <span class="assess-strip-risk">{{ currentBox.latestAssessment.topRisk?.message || currentBox.latestAssessment.summary }}</span>
+            <el-link type="primary" :underline="false" style="margin-left: auto">查看评估详情 →</el-link>
+          </div>
+          <div v-else-if="currentBox" class="assess-strip assess-strip-empty">
+            <span class="sub-text">该箱体尚未生成综合评估</span>
+            <el-button link type="primary" size="small" @click="activeTab = 'assessment'">立即生成 →</el-button>
+          </div>
           <div class="chart-toolbar">
             <el-radio-group v-model="tzMode" size="small">
               <el-radio-button value="UTC">UTC</el-radio-button>
@@ -167,13 +193,27 @@
             </el-timeline>
           </div>
         </el-tab-pane>
+
+        <el-tab-pane label="综合评估" name="assessment">
+          <AssessmentPanel
+            v-if="currentBox"
+            ref="assessmentPanelRef"
+            :box-id="currentBox.id"
+            :latest="currentBox.latestAssessment"
+            @generated="onAssessmentGenerated"
+            @jump-anomaly="goAnomaly"
+            @jump-timeline="activeTab = 'timeline'"
+            @jump-chart="activeTab = 'chart'"
+          />
+        </el-tab-pane>
       </el-tabs>
     </el-drawer>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch, nextTick } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Connection,
@@ -182,9 +222,19 @@ import {
   RefreshLeft,
   Search
 } from '@element-plus/icons-vue'
-import { api, type AnomalyView, type BoxListItem, type SamplePoint, type TimelineResponse } from '../api'
+import {
+  api,
+  type AnomalyView,
+  type AssessmentView,
+  type BoxListItem,
+  type SamplePoint,
+  type TimelineResponse
+} from '../api'
 import TemperatureChart from '../components/TemperatureChart.vue'
-import { ANOMALY_META, fmtDuration, fmtUtc } from '../utils/format'
+import AssessmentPanel from '../components/AssessmentPanel.vue'
+import { ANOMALY_META, ASSESSMENT_META, fmtDuration, fmtUtc } from '../utils/format'
+
+const router = useRouter()
 
 const loading = ref(false)
 const boxes = ref<BoxListItem[]>([])
@@ -252,6 +302,52 @@ function openTimeline(row: BoxListItem) {
   activeTab.value = 'timeline'
   drawerVisible.value = true
 }
+function openAssessment(row: BoxListItem) {
+  currentBox.value = row
+  activeTab.value = 'assessment'
+  drawerVisible.value = true
+}
+
+const assessmentPanelRef = ref<InstanceType<typeof AssessmentPanel> | null>(null)
+watch(activeTab, (tab) => {
+  if (tab === 'assessment') {
+    nextTick(() => assessmentPanelRef.value?.activate?.())
+  }
+})
+
+function onAssessmentGenerated(view: AssessmentView) {
+  ElMessage.success(`评估已生成（v${view.version} · ${view.conclusionLabel}），历史版本均已保留`)
+  // 立即更新抽屉当前行徽标，并刷新列表持久化后的生成时间/风险
+  if (currentBox.value && currentBox.value.id === view.boxId) {
+    currentBox.value = {
+      ...currentBox.value,
+      latestAssessment: {
+        id: view.id,
+        version: view.version,
+        conclusion: view.conclusion,
+        conclusionLabel: view.conclusionLabel,
+        chainStatus: view.chainStatus,
+        summary: view.summary,
+        generatedAt: view.generatedAt,
+        topRisk: view.primaryRisks?.[0] ?? null
+      }
+    }
+  }
+  load()
+}
+
+function assessmentTagType(c: string) {
+  return ASSESSMENT_META[c]?.type || 'info'
+}
+
+/** 从评估风险跳转到异常复核页（带箱号过滤） */
+function goAnomaly(anomalyId?: number) {
+  drawerVisible.value = false
+  router.push({
+    path: '/anomalies',
+    query: { boxCode: currentBox.value?.boxCode, anomalyId: anomalyId ? String(anomalyId) : undefined }
+  })
+}
 
 async function loadDetail() {
   if (!currentBox.value) return
@@ -270,8 +366,12 @@ async function loadDetail() {
 }
 
 watch([drawerVisible, currentBox], (v) => {
-  if (v[0]) loadDetail()
-  else {
+  if (v[0]) {
+    loadDetail()
+    if (activeTab.value === 'assessment') {
+      nextTick(() => assessmentPanelRef.value?.activate?.())
+    }
+  } else {
     points.value = []
     drawerAnomalies.value = []
     timeline.value = null
@@ -349,4 +449,32 @@ onMounted(load)
 .hash-text { color: #1c5cab; }
 .timeline-wrap { padding: 8px 24px; }
 .timeline-meta { color: #606266; margin-bottom: 16px; font-size: 13px; }
+.assess-cell { cursor: pointer; line-height: 1.6; }
+.assess-cell:hover .assess-risk { color: #1c5cab; }
+.assess-risk {
+  color: #909399;
+  font-size: 12px;
+  max-width: 190px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.assess-strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 16px 0;
+  padding: 8px 12px;
+  background: #f6f8fa;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12.5px;
+}
+.assess-strip-empty { cursor: default; }
+.assess-strip-risk {
+  color: #606266;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 </style>

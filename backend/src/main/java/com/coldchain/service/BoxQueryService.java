@@ -15,6 +15,7 @@ import com.coldchain.mapper.DeviceMapper;
 import com.coldchain.mapper.ShipmentMapper;
 import com.coldchain.mapper.TemperatureSampleMapper;
 import com.coldchain.mapper.TransportNodeMapper;
+import com.coldchain.service.assessment.AssessmentService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -22,7 +23,6 @@ import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -45,6 +45,7 @@ public class BoxQueryService {
     private final TemperatureSampleMapper sampleMapper;
     private final AnomalyMapper anomalyMapper;
     private final TransportNodeMapper nodeMapper;
+    private final AssessmentService assessmentService;
 
     public List<BoxListItem> listBoxes(String boxCode, String batchNo,
                                        BigDecimal tempFrom, BigDecimal tempTo,
@@ -80,6 +81,12 @@ public class BoxQueryService {
             }
             result.add(toListItem(box, devices.get(box.getDeviceId())));
         }
+        // 批量挂最新评估徽标（一条 SQL），避免逐箱查询
+        if (!result.isEmpty()) {
+            Map<Long, com.coldchain.domain.dto.assessment.AssessmentBadge> badges =
+                    assessmentService.latestBadges(result.stream().map(BoxListItem::getId).toList());
+            result.forEach(item -> item.setLatestAssessment(badges.get(item.getId())));
+        }
         return result;
     }
 
@@ -103,7 +110,9 @@ public class BoxQueryService {
             return null;
         }
         Device device = box.getDeviceId() == null ? null : deviceMapper.selectById(box.getDeviceId());
-        return toListItem(box, device);
+        BoxListItem item = toListItem(box, device);
+        item.setLatestAssessment(assessmentService.latestBadge(boxId));
+        return item;
     }
 
     private BoxListItem toListItem(ColdBox box, Device device) {
@@ -165,31 +174,8 @@ public class BoxQueryService {
         }
         item.setExcursionSeconds(excursion);
         item.setOfflineSeconds(offline);
-        long deducted = unionLength(intervals);
+        long deducted = com.coldchain.common.IntervalUtils.unionLength(intervals);
         item.setValidColdChainSeconds(Math.max(0, covered - deducted));
         return item;
-    }
-
-    /** 区间并集长度（秒），避免超温与离线区间重叠时重复扣减 */
-    private long unionLength(List<long[]> intervals) {
-        if (intervals.isEmpty()) {
-            return 0;
-        }
-        intervals.sort(Comparator.comparingLong(a -> a[0]));
-        long total = 0;
-        long curStart = intervals.get(0)[0];
-        long curEnd = intervals.get(0)[1];
-        for (int i = 1; i < intervals.size(); i++) {
-            long[] iv = intervals.get(i);
-            if (iv[0] <= curEnd) {
-                curEnd = Math.max(curEnd, iv[1]);
-            } else {
-                total += curEnd - curStart;
-                curStart = iv[0];
-                curEnd = iv[1];
-            }
-        }
-        total += curEnd - curStart;
-        return total;
     }
 }

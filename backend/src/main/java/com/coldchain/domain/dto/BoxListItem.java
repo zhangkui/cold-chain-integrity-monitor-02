@@ -1,5 +1,6 @@
 package com.coldchain.domain.dto;
 
+import com.coldchain.domain.dto.assessment.AssessmentBadge;
 import lombok.Data;
 
 import java.math.BigDecimal;
@@ -31,4 +32,7 @@ public class BoxListItem {
 
     private Integer openAnomalyCount;
     private Integer totalAnomalyCount;
+
+    /** 最新一次综合评估徽标（无评估记录时为 null） */
+    private AssessmentBadge latestAssessment;
 }

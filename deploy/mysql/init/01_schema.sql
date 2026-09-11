@@ -248,3 +248,25 @@ CREATE TABLE IF NOT EXISTS import_row (
   PRIMARY KEY (id),
   KEY idx_import_row_batch (import_batch_id)
 ) ENGINE=InnoDB COMMENT='批量导入行结果';
+
+-- 箱体综合评估（版本化、仅追加；重复触发生成新版本，历史永不覆盖）
+CREATE TABLE IF NOT EXISTS box_assessment (
+  id                  BIGINT       NOT NULL AUTO_INCREMENT,
+  box_id              BIGINT       NOT NULL,
+  version             INT          NOT NULL COMMENT '箱体内自增版本号',
+  conclusion          VARCHAR(24)  NOT NULL COMMENT 'PASS 合格 / FAIL 不合格 / NEEDS_REVIEW 需复核 / UNASSESSABLE 不可评估',
+  chain_status        VARCHAR(24)  NOT NULL COMMENT 'INTACT/BROKEN/UNVERIFIED/NO_DATA',
+  chain_checked       INT          NOT NULL DEFAULT 0 COMMENT '本次实际校验的哈希环数',
+  summary             VARCHAR(512) NOT NULL COMMENT '结论摘要',
+  primary_risks       TEXT         NULL COMMENT '主要风险 JSON 数组（含 code/severity/message/证据引用）',
+  metrics_json        MEDIUMTEXT   NOT NULL COMMENT '组成指标快照 JSON',
+  rule_snapshot_json  MEDIUMTEXT   NOT NULL COMMENT '评估使用的箱体温控规则快照 JSON',
+  data_boundary_json  MEDIUMTEXT   NOT NULL COMMENT '评估使用的数据时间边界 JSON',
+  rule_version        VARCHAR(64)  NOT NULL DEFAULT 'assessment-v1' COMMENT '评估规则版本',
+  generated_by        VARCHAR(64)  NOT NULL DEFAULT 'system',
+  generated_at        DATETIME(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '评估生成时间(UTC)',
+  created_at          DATETIME(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_assessment_version (box_id, version),
+  KEY idx_assessment_box_time (box_id, generated_at)
+) ENGINE=InnoDB COMMENT='箱体综合评估（版本化、仅追加）';

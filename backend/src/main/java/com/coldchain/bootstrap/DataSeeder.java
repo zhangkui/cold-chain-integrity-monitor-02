@@ -19,6 +19,8 @@ import com.coldchain.mapper.TemperatureSampleMapper;
 import com.coldchain.mapper.TransportNodeMapper;
 import com.coldchain.service.AuditService;
 import com.coldchain.service.DetectionService;
+import com.coldchain.service.assessment.AssessmentService;
+import com.coldchain.common.BusinessException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.ApplicationArguments;
@@ -55,6 +57,7 @@ public class DataSeeder implements ApplicationRunner {
     private final CalibrationRecordMapper calibrationMapper;
     private final TemperatureSampleMapper sampleMapper;
     private final DetectionService detectionService;
+    private final AssessmentService assessmentService;
     private final AuditService auditService;
 
     @Override
@@ -128,7 +131,22 @@ public class DataSeeder implements ApplicationRunner {
         }
         auditService.log("SYSTEM", "*", "SEED_DEMO_DATA",
                 java.util.Map.of("devices", 3, "boxes", 3));
+
+        // 生成综合评估演示数据：box1 不合格（超温/离线）、box2 需复核（哈希断裂）、
+        // box3 不可评估（无采样，结果仍落库为 UNASSESSABLE 版本，接口返回 422）
+        seedAssessment(box1.getId());
+        seedAssessment(box2.getId());
+        seedAssessment(box3.getId());
         log.info("演示数据初始化完成");
+    }
+
+    private void seedAssessment(Long boxId) {
+        try {
+            assessmentService.generate(boxId);
+        } catch (BusinessException e) {
+            // 数据不足的 422 属于预期演示场景（不可评估版本已持久化）
+            log.info("箱体 {} 初始评估：{} ({})", boxId, e.getMessage(), e.getErrorCode());
+        }
     }
 
     private Device device(String code, String name, String tz) {

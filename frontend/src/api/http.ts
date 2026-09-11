@@ -59,7 +59,16 @@ http.interceptors.response.use(
     if (body && typeof body === 'object' && 'code' in body) {
       if (body.code === 0) return body.data
       if (!config._silent) ElMessage.error(body.message || '请求失败')
-      return Promise.reject(new Error(body.message || '请求失败'))
+      // 业务失败也可能携带数据（如 422 已持久化的“不可评估”结果）
+      const err = new Error(body.message || '请求失败') as Error & {
+        code?: number
+        errorCode?: string
+        data?: unknown
+      }
+      err.code = body.code
+      err.errorCode = body.errorCode
+      err.data = body.data
+      return Promise.reject(err)
     }
     return body
   },
@@ -82,6 +91,14 @@ http.interceptors.response.use(
     if (!config?._silent) {
       const msg = error.response?.data?.message || (navigator.onLine ? '请求失败，请稍后重试' : '网络已断开，恢复后将自动重试')
       ElMessage.error(msg)
+    }
+    // 把业务信封的 code/errorCode/data 挂到错误对象上，便于调用方区分 404/422/500
+    const envelope = error.response?.data
+    if (envelope && typeof envelope === 'object' && 'code' in envelope) {
+      error.code = envelope.errorCode || String(envelope.code)
+      error.bizCode = envelope.code
+      error.errorCode = envelope.errorCode
+      error.bizData = envelope.data
     }
     return Promise.reject(error)
   }

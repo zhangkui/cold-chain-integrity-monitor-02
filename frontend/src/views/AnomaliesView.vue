@@ -25,7 +25,22 @@
     </div>
 
     <div class="table-card">
-      <el-table v-loading="loading" :data="anomalies" stripe empty-text="暂无异常，冷链状态良好">
+      <el-alert
+        v-if="highlightId"
+        :title="`已从评估证据定位到异常 #${highlightId}`"
+        type="info"
+        show-icon
+        :closable="true"
+        style="margin-bottom: 10px"
+        @close="highlightId = null"
+      />
+      <el-table
+        v-loading="loading"
+        :data="anomalies"
+        :row-class-name="rowClassName"
+        stripe
+        empty-text="暂无异常，冷链状态良好"
+      >
         <el-table-column label="类型" width="130">
           <template #default="{ row }">
             <el-tag :type="ANOMALY_META[row.type]?.type || 'info'" effect="dark" size="small">
@@ -137,16 +152,23 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { RefreshLeft, Search, Upload } from '@element-plus/icons-vue'
 import type { UploadFile } from 'element-plus'
 import { api, type AnomalyView, type BoxListItem, type Evidence } from '../api'
 import { ANOMALY_META, STATUS_META, fmtDuration, fmtUtc } from '../utils/format'
 
+const route = useRoute()
 const loading = ref(false)
 const anomalies = ref<AnomalyView[]>([])
-const boxCodeInput = ref('')
+const boxCodeInput = ref((route.query.boxCode as string) || '')
 const filters = ref({ type: '', status: '' })
+const highlightId = ref<number | null>(route.query.anomalyId ? Number(route.query.anomalyId) : null)
+
+function rowClassName({ row }: { row: AnomalyView }) {
+  return highlightId.value === row.id ? 'anomaly-row-highlight' : ''
+}
 
 async function load() {
   loading.value = true
@@ -166,6 +188,10 @@ async function load() {
       type: filters.value.type || undefined,
       status: filters.value.status || undefined
     })
+    if (highlightId.value && !anomalies.value.some((a) => a.id === highlightId.value)) {
+      // 被定位的异常可能被状态筛选隐藏，给出提示但保留 boxCode 过滤
+      ElMessage.info('未在当前筛选结果中找到该异常，可清空类型/状态筛选查看')
+    }
   } finally {
     loading.value = false
   }
@@ -243,6 +269,9 @@ onMounted(load)
 
 <style scoped>
 .sub-text { color: #909399; font-size: 12px; }
+:deep(.anomaly-row-highlight) > td.el-table__cell {
+  background-color: #fdf6ec !important;
+}
 .review-desc {
   background: #f6f8fa;
   border-radius: 6px;

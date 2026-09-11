@@ -46,3 +46,28 @@ export const STATUS_META: Record<string, { label: string; type: 'warning' | 'suc
   CONFIRMED: { label: '已确认', type: 'danger' },
   REJECTED: { label: '已驳回', type: 'info' }
 }
+
+export const ASSESSMENT_META: Record<
+  string,
+  { label: string; type: 'success' | 'danger' | 'warning' | 'info' }
+> = {
+  PASS: { label: '合格', type: 'success' },
+  FAIL: { label: '不合格', type: 'danger' },
+  NEEDS_REVIEW: { label: '需复核', type: 'warning' },
+  UNASSESSABLE: { label: '不可评估', type: 'info' }
+}
+
+export const CHAIN_STATUS_META: Record<string, { label: string; type: 'success' | 'danger' | 'warning' | 'info' }> = {
+  INTACT: { label: '链完整', type: 'success' },
+  BROKEN: { label: '链断裂', type: 'danger' },
+  UNVERIFIED: { label: '未校验', type: 'warning' },
+  NO_DATA: { label: '无数据', type: 'info' }
+}
+
+export const METRIC_STATUS_META: Record<string, { type: 'success' | 'warning' | 'danger' | 'info'; label: string }> = {
+  OK: { type: 'success', label: '正常' },
+  WARN: { type: 'warning', label: '关注' },
+  BAD: { type: 'danger', label: '异常' },
+  INFO: { type: 'info', label: '提示' },
+  NA: { type: 'info', label: '不适用' }
+}

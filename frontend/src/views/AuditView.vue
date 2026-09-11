@@ -3,7 +3,7 @@
     <div class="filter-bar">
       <el-form :inline="true" @submit.prevent>
         <el-form-item label="实体类型">
-          <el-input v-model="filters.entityType" placeholder="如 ANOMALY / SAMPLE / EVIDENCE" clearable style="width: 240px" @keyup.enter="load" />
+          <el-input v-model="filters.entityType" placeholder="如 BOX_ASSESSMENT / ANOMALY / SAMPLE / EVIDENCE" clearable style="width: 300px" @keyup.enter="load" />
         </el-form-item>
         <el-form-item label="动作">
           <el-input v-model="filters.action" placeholder="如 REVIEW_CONFIRM" clearable style="width: 220px" @keyup.enter="load" />
